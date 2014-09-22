@@ -531,14 +531,36 @@ void startLoading(FILE *fp) {
     }
 }
 
+static unsigned int dictSdsCaseHash(const void *key) {
+    return dictGenCaseHashFunction((unsigned char*)key, sdslen((char*)key));
+}
 
+static int dictSdsKeyCaseCompare(void *privdata, const void *key1,
+        const void *key2)
+{
+    DICT_NOTUSED(privdata);
 
-int rdbLoad(char *filename) {
+    return strcasecmp(key1, key2) == 0;
+}
+
+dictType strTableDictType = {
+    dictSdsCaseHash,
+    NULL,
+    NULL,
+    dictSdsKeyCaseCompare,
+    NULL
+};
+
+int rdbLoad(char *filename, int maxseq) {
     uint32_t dbid;
     int type, rdbver;
     char buf[1024];
+    char flag;
+    char* temp = zmalloc(sizeof(char)*128);
+    list *d = listCreate();
     long long expiretime, now = mstime();
     FILE *fp;
+    int count = 0;
     rio rdb;
     if ((fp = fopen(filename,"r")) == NULL) return REDIS_ERR;
     rioInitWithFile(&rdb,fp);
@@ -561,8 +583,12 @@ int rdbLoad(char *filename) {
     }
     startLoading(fp);
     while(1) {
+        count++;
         robj *key, *val;
+        char *val_type_name;
+        memset(temp, 0, sizeof(char)*128);
         expiretime = -1;
+        flag = 0;
 
         /* Read type. */
         if ((type = rdbLoadType(&rdb)) == -1) goto eoferr;
@@ -592,16 +618,94 @@ int rdbLoad(char *filename) {
         }
         /* Read key */
         if ((key = rdbLoadStringObject(&rdb)) == NULL) goto eoferr;
-		
+        char *pb = key->ptr;
+        char *p = pb;
+        char *p2 = temp;
+        char *p2sep = p2;
+        int bad_seq = 0;
+        while (*p) {
+            if (*p == ':') {
+                bad_seq = 0;
+                p2sep = p2 + 1;
+            }
+            if (bad_seq >= maxseq && p2sep!=temp) {
+                p2 = p2sep;
+                *p2++ = '$';
+                *p2++ = 's';
+                *p2++ = 'e';
+                *p2++ = 'q';
+                while (*p) {
+                    if (*p == ':') {
+                        break;
+                    }
+                    p = p + 1;
+                }
+                bad_seq = 0;
+                goto filter_continue;
+            }
+            if (*p >= '0' && *p <= '9') {
+                int numcount=0;
+                char *p3 = p2;
+                while (*p!=':' && *p!='\0') {
+                    *p3++=*p++;
+                    numcount++;
+                    bad_seq++;
+                }
+                if (numcount > 3) {
+                    *p2++ = '$';
+                    *p2++ = 'i';
+                    *p2++ = 'd';
+                } else {
+                    p2 = p3;
+                }
+                goto filter_continue;
+            }
+filter_continue:
+            *p2++ = *p++;
+            bad_seq++;
+        }
+filter_end:
+        *p2++ = '\0';
+        if (listSearchKey(d, (void *)temp) != NULL) {
+            flag = 4;
+        } else {
+            d = listAddNodeHead(d, (void *)strdup(temp));
+        }
+        
         /* Read value */
         if ((val = rdbLoadObject(type,&rdb)) == NULL) goto eoferr;
-		
-		printf("%s\n",key->ptr);
-      
+
+        switch (val->type) {
+            case 0 : 
+                val_type_name = "REDIS_STRING";
+                break;
+            case 1 :
+                val_type_name = "REDIS_LIST";
+                break;
+            case 2 :
+                val_type_name = "REDIS_SET";
+                break;
+            case 3 :
+                val_type_name = "REDIS_ZSET";
+                break;
+            case 4 :
+                val_type_name = "REDIS_HASH";
+                break;
+            default :
+                val_type_name = "UNKNOWN";
+        }
+        if (flag != 4) {
+            printf("%s %s\n",temp, val_type_name);
+        } else {
+            // printf("%s\n",temp);
+        }
+
         /* Add the new object in the hash table */
         //dbAdd(db,key,val);
         /* Set the expire time if needed */
         decrRefCount(key);
+        decrRefCount(val);
+        continue;
     }
     /* Verify the checksum if RDB version is >= 5 */
     if (rdbver >= 5 && server.rdb_checksum) {
