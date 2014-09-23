@@ -295,7 +295,8 @@ listNode *listSearchKey(list *list, void *key)
                 return node;
             }
         } else {
-            if (key == node->value) {
+            rdbKey *k = node->value;
+            if (strcmp(key,k->name) == 0) {
                 listReleaseIterator(iter);
                 return node;
             }

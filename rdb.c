@@ -666,15 +666,22 @@ filter_continue:
         }
 filter_end:
         *p2++ = '\0';
-        if (listSearchKey(d, (void *)temp) != NULL) {
+        rdbKey *mergeKey;
+        listNode *node = listSearchKey(d, (void *)temp);
+        if (node != NULL) {
+            mergeKey = node->value;
+            mergeKey->count++;  
             flag = 4;
         } else {
-            d = listAddNodeHead(d, (void *)strdup(temp));
+            mergeKey = zmalloc(sizeof(rdbKey));
+            mergeKey->name = strdup(temp);
+            mergeKey->count = 1;
+            d = listAddNodeHead(d, (void *)mergeKey);
         }
-        
+        int begin = rdb.processed_bytes;
         /* Read value */
         if ((val = rdbLoadObject(type,&rdb)) == NULL) goto eoferr;
-
+        mergeKey->size += rdb.processed_bytes - begin;
         switch (val->type) {
             case 0 : 
                 val_type_name = "REDIS_STRING";
@@ -694,11 +701,8 @@ filter_end:
             default :
                 val_type_name = "UNKNOWN";
         }
-        if (flag != 4) {
-            printf("%s %s\n",temp, val_type_name);
-        } else {
-            // printf("%s\n",temp);
-        }
+
+        printf("key:%s count:%d size:%d bytes type:%s\n",mergeKey->name, mergeKey->count, mergeKey->size, val_type_name);
 
         /* Add the new object in the hash table */
         //dbAdd(db,key,val);
@@ -707,6 +711,16 @@ filter_end:
         decrRefCount(val);
         continue;
     }
+
+    printf("================REDIS KEY分布==============");
+    listNode *pw = d->head;
+    while (pw) {
+        rdbKey *cur = pw->value;
+        printf("key:%s, count:%d, size:%d bytes\n", cur->name, cur->count, cur->size);
+        pw = pw->next;
+    }
+    printf("================REDIS KEY分布==============");
+
     /* Verify the checksum if RDB version is >= 5 */
     if (rdbver >= 5 && server.rdb_checksum) {
         uint64_t cksum, expected = rdb.cksum;
