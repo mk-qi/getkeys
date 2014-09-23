@@ -101,13 +101,11 @@
 #define REDIS_ZSET_MAX_ZIPLIST_VALUE 64
 
 
-
-
 int rdbLoadType(rio *rdb);
 time_t rdbLoadTime(rio *rdb);
 uint32_t rdbLoadLen(rio *rdb, int *isencoded);
 int rdbLoadObjectType(rio *rdb);
-int rdbLoad(char *filename);
+int rdbLoad(char *filename, int len);
 robj *rdbLoadObject(int type, rio *rdb);
 robj *rdbLoadStringObject(rio *rdb);
 #endif

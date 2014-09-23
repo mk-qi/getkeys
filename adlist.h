@@ -53,6 +53,14 @@ typedef struct list {
     unsigned long len;
 } list;
 
+struct s_rdbKey
+{
+    char *name;
+    int count;
+    int size;
+};
+typedef struct s_rdbKey rdbKey;
+
 /* Functions implemented as macros */
 #define listLength(l) ((l)->len)
 #define listFirst(l) ((l)->head)

@@ -443,10 +443,10 @@ void initServerConfig() {
 }
 
 /* Function called at startup to load RDB or AOF file in memory. */
-void loadDataFromDisk(char *filename) {
+void loadDataFromDisk(char *filename, int maxseq) {
     long long start = ustime();
 
-    if (rdbLoad(filename) == REDIS_OK) {
+    if (rdbLoad(filename, maxseq) == REDIS_OK) {
         redisLog(REDIS_NOTICE,"DB loaded from disk: %.3f seconds",
             (float)(ustime()-start)/1000000);
     } else if (errno != ENOENT) {
@@ -456,14 +456,18 @@ void loadDataFromDisk(char *filename) {
 }
 
 int main(int argc, char **argv) {
-	initServerConfig();
+    initServerConfig();
     /* expect the first argument to be the dump file */
     if (argc <= 1) {
-        printf("Usage: %s <dump.rdb>\n", argv[0]);
+        printf("Usage: %s <dump.rdb> min_seq_length\n", argv[0]);
         exit(0);
     }
-	//initServer();
-	loadDataFromDisk(argv[1]);
+    //initServer();
+    int max = 15;
+    if (argc > 1) {
+        max = atoi(argv[2]);
+    }
+    loadDataFromDisk(argv[1], max);
 }
 
 /* The End */
